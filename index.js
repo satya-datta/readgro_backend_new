@@ -26,6 +26,7 @@ app.use(
       "https://readgro.com",
       "https://www.readgro.com",
       "https://read-gro-fm6j.vercel.app",
+      "https://readgro-front.vercel.app",
     ], // Allow multiple origins
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
