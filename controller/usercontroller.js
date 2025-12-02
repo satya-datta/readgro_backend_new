@@ -413,6 +413,7 @@ exports.loginUser = (req, res) => {
       httpOnly: true,
       sameSite: "None", // Required for cross-origin cookies
       maxAge: 2 * 60 * 60 * 1000, // 2 hours
+      domain: "readgro-backend-new.onrender.com",
       secure: true, // Required for HTTPS
     });
 
