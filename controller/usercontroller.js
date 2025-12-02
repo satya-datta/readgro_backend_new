@@ -411,9 +411,8 @@ exports.loginUser = (req, res) => {
     // Set token as an HTTP-only cookie
     res.cookie("UserauthToken", token, {
       httpOnly: true,
-      sameSite: "none", // Required for cross-origin cookies
-      maxAge: 2 * 60 * 60 * 1000, 
-      domain:"readgro.com",// 2 hours
+      sameSite: "None", // Required for cross-origin cookies
+      maxAge: 2 * 60 * 60 * 1000, // 2 hours
       secure: true, // Required for HTTPS
     });
 
