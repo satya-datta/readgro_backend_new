@@ -408,12 +408,14 @@ exports.loginUser = (req, res) => {
       }
     );
 
-    // Set token as an HTTP-only cookie
+    // Set token as an HTTP-only cookie with domain
     res.cookie("UserauthToken", token, {
       httpOnly: true,
-      sameSite: "None", // Required for cross-origin cookies
-      maxAge: 2 * 60 * 60 * 1000, // 2 hours
       secure: true, // Required for HTTPS
+      sameSite: "Lax", // Better compatibility with iOS
+      maxAge: 2 * 60 * 60 * 1000, // 2 hours
+      domain: "readgro.com", // Set domain for cross-subdomain access
+      path: "/" // Explicitly set path
     });
 
     // Send response with user_id and user name
