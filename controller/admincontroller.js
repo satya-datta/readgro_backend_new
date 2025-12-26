@@ -325,7 +325,7 @@ exports.getCourseByCourseId = (req, res) => {
 
     // Extracting the course details
     const courseDetails = results[0]; // Assuming `course_id` is unique
-    const { course_name, course_description, instructor, course_image,  course_price,
+    const { course_name, course_description, instructor, course_image, course_price,
       discount_price,
       commission } =
       courseDetails;
@@ -338,9 +338,9 @@ exports.getCourseByCourseId = (req, res) => {
         description: course_description,
         instructor: instructor,
         image: course_image,
-        course_price:course_price,
-        discount_price:discount_price,
-        commission:commission,
+        course_price: course_price,
+        discount_price: discount_price,
+        commission: commission,
       },
     });
   });
@@ -498,18 +498,8 @@ exports.getAdminDetails = (req, res) => {
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
 // 📌 Nodemailer Setup
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465, // or 587
-  secure: true, // true for port 465, false for port 587
-  auth: {
-    user: process.env.EMAIL_USER, // Your Gmail ID
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false, // Bypass certificate validation (NOT recommended for production)
-  },
-});
+// Redundant transporter removed, using emailService.js instead
+
 
 console.log(process.env.EMAIL_USER, process.env.EMAIL_PASS);
 // 📌 Simulated Database for OTPs
@@ -522,12 +512,9 @@ exports.sendOtp = async (req, res) => {
   console.log("otp  sent");
   console.log(ADMIN_EMAIL);
   try {
-    await transporter.sendMail({
-      from: `"Admin OTP" <${process.env.EMAIL_USER}>`,
-      to: ADMIN_EMAIL,
-      subject: "Your OTP for Change Credentials",
-      html: `<p>Your OTP for processing data : <strong>${otp}</strong></p>`,
-    });
+    const otpContent = `<p>Your OTP for processing data : <strong>${otp}</strong></p>`;
+    await sendEmail(ADMIN_EMAIL, "Your OTP for Change Credentials", otpContent);
+
 
     res.json({ success: true, message: "OTP sent to email" });
   } catch (error) {
@@ -603,12 +590,9 @@ exports.sendloginOtp = async (req, res) => {
     console.log("Email:", email);
 
     try {
-      await transporter.sendMail({
-        from: `"Admin OTP" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: "Your OTP for Login Into READGRO",
-        html: `<p>Your OTP for processing credentials: <strong>${otp}</strong></p>`,
-      });
+      const otpContent = `<p>Your OTP for processing credentials: <strong>${otp}</strong></p>`;
+      await sendEmail(email, "Your OTP for Login Into READGRO", otpContent);
+
 
       res.json({ success: true, message: "OTP sent to email" });
     } catch (error) {

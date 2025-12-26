@@ -16,16 +16,16 @@ const transporter = nodemailer.createTransport({
 const sendEmail = async (to, subject, htmlContent) => {
   try {
     const info = await transporter.sendMail({
-      from: '"Read Gro" <readgroofficial@gmail.com>',
+      from: `"ReadGro" <${process.env.EMAIL_USER}>`,
       to, // Recipient email
       subject, // Email subject
       html: htmlContent, // Email content
     });
 
-    console.log("Email sent:", info.messageId);
+    console.log("Email sent successfully to", to, ":", info.messageId);
     return true;
   } catch (error) {
-    console.error("Error sending email:", error);
+    console.error("Error sending email to", to, ":", error);
     return false;
   }
 };
@@ -44,16 +44,16 @@ const sendOTP = async (toEmail) => {
 
   try {
     const info = await transporter.sendMail({
-      from: '"ReadGro" <readgroofficial@gmail.com>',
+      from: `"ReadGro" <${process.env.EMAIL_USER}>`,
       to: toEmail,
       subject,
       html: htmlContent,
     });
 
-    console.log("OTP sent successfully:", info.messageId);
+    console.log("OTP sent successfully to", toEmail, ":", info.messageId);
     return otp; // Return OTP for verification
   } catch (error) {
-    console.error("Error sending OTP:", error);
+    console.error("Error sending OTP to", toEmail, ":", error);
     return null;
   }
 };

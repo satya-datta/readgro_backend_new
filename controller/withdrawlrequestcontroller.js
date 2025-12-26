@@ -249,18 +249,8 @@ const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
 // 📌 Nodemailer Setup
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465, // or 587
-  secure: true, // true for port 465, false for port 587
-  auth: {
-    user: process.env.EMAIL_USER, // Your Gmail ID
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false, // Bypass certificate validation (NOT recommended for production)
-  },
-});
+// Redundant transporter removed, using emailService.js instead
+
 
 console.log(process.env.EMAIL_USER, process.env.EMAIL_PASS);
 // 📌 Simulated Database for OTPs
@@ -273,14 +263,11 @@ exports.sendOtp = async (req, res) => {
   console.log("otp  sent");
   console.log(ADMIN_EMAIL);
   try {
-    await transporter.sendMail({
-      from: `"Admin OTP" <${process.env.EMAIL_USER}>`,
-      to: ADMIN_EMAIL,
-      subject: "Your OTP for Payout",
-      html: `<p>Your OTP for processing payout: <strong>${otp}</strong></p>`,
-    });
+    const otpContent = `<p>Your OTP for processing payout: <strong>${otp}</strong></p>`;
+    await sendEmail(ADMIN_EMAIL, "Your OTP for Payout", otpContent);
 
     res.json({ success: true, message: "OTP sent to email" });
+
   } catch (error) {
     res
       .status(500)
@@ -406,7 +393,7 @@ exports.ProcessPayout = async (req, res) => {
   </div>
 `;
 
-    sendEmail(userEmail, "Withdrawal Approved", withdrawalEmailContent);
+    await sendEmail(userEmail, "Withdrawal Approved", withdrawalEmailContent);
 
     await conn.commit();
     res.json({
@@ -451,7 +438,7 @@ exports.ProcessPayout = async (req, res) => {
   </div>
 `;
 
-    sendEmail(userEmail, "Withdrawal Rejected", withdrawalRejectedEmailContent);
+    await sendEmail(userEmail, "Withdrawal Rejected", withdrawalRejectedEmailContent);
 
     res.status(500).json({
       success: false,

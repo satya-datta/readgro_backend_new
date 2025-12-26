@@ -207,7 +207,7 @@ exports.createUser = (req, res, next) => {
             secure: true, // Required for HTTPS
           });
           const walletQuery = `INSERT INTO wallet (user_id, balance) VALUES (?, ?)`;
-          connection.query(walletQuery, [userId, 0.0], (err, walletResult) => {
+          connection.query(walletQuery, [userId, 0.0], async (err, walletResult) => {
             if (err) {
               return res
                 .status(500)
@@ -226,7 +226,7 @@ exports.createUser = (req, res, next) => {
   </div>
 `;
 
-            sendEmail(
+            await sendEmail(
               email,
               "You are successfully signed up!",
               signupEmailContent
@@ -305,7 +305,7 @@ exports.createUser = (req, res, next) => {
                               connection.query(
                                 transactionQuery,
                                 transactionValues,
-                                (err) => {
+                                async (err) => {
                                   if (err) {
                                     return res.status(500).json({
                                       message:
@@ -325,7 +325,7 @@ exports.createUser = (req, res, next) => {
   </div>
 `;
 
-                                  sendEmail(
+                                  await sendEmail(
                                     referrerEmail,
                                     "Referral Bonus Credited!",
                                     referralEmailContent
@@ -782,13 +782,13 @@ exports.updateUser = (req, res, next) => {
       // Handle referral code logic if provided
       if (referralCode) {
         const referrerQuery = `
-          SELECT userid, PackageId FROM user WHERE GeneratedReferralCode = ?
+          SELECT userid, PackageId, Email FROM user WHERE GeneratedReferralCode = ?
         `;
 
         connection.query(
           referrerQuery,
           [referralCode],
-          (err, referrerResult) => {
+          async (err, referrerResult) => {
             if (err) {
               console.error("Error finding referrer:", err);
               return res.status(500).json({
@@ -826,7 +826,7 @@ exports.updateUser = (req, res, next) => {
                   connection.query(
                     updateWalletQuery,
                     [referralCommission, referrerId],
-                    (err) => {
+                    async (err) => {
                       if (err) {
                         console.error("Error updating referrer wallet:", err);
                         return res.status(500).json({
@@ -851,7 +851,7 @@ exports.updateUser = (req, res, next) => {
                       connection.query(
                         transactionQuery,
                         transactionValues,
-                        (err) => {
+                        async (err) => {
                           if (err) {
                             console.error(
                               "Error recording wallet transaction:",
@@ -862,6 +862,24 @@ exports.updateUser = (req, res, next) => {
                               error: err,
                             });
                           }
+
+                          // ✅ Send email after successful referral credit
+                          const referrerEmail = referrerResult[0].Email;
+                          const referralEmailContent = `
+  <div style="max-width:600px;margin:20px auto;padding:20px;border-radius:10px;background:linear-gradient(135deg,#d4fc79,#96e6a1);font-family:sans-serif;color:#333;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
+    <img src="https://res.cloudinary.com/djset9wsw/image/upload/v1748972406/RGFULL_dbbwmo.png" alt="ReadGro Logo" style="width:150px;margin-bottom:20px;">
+    <h2 style="font-size:28px;">Referral Bonus Credited!</h2>
+    <p style="font-size:18px;">Congratulations! You have earned a referral bonus of ₹${referralCommission}.</p>
+    <hr style="margin:20px 0;border:none;border-top:1px solid rgba(255,255,255,0.3);">
+    <p style="font-size:16px;">Keep referring your friends and earn even more rewards.</p>
+    <p style="margin-top:30px;font-size:14px;color:#555;">— The ReadGro Team</p>
+  </div>
+`;
+                          await sendEmail(
+                            referrerEmail,
+                            "Referral Bonus Credited!",
+                            referralEmailContent
+                          );
 
                           return res.status(200).json({
                             message:
@@ -1012,18 +1030,8 @@ exports.updatePassword = async (req, res) => {
 // const Use = process.env.ADMIN_EMAIL;
 
 // 📌 Nodemailer Setup
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465, // or 587
-  secure: true, // true for port 465, false for port 587
-  auth: {
-    user: process.env.EMAIL_USER, // Your Gmail ID
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false, // Bypass certificate validation (NOT recommended for production)
-  },
-});
+// Redundant transporter removed, using emailService.js instead
+
 
 console.log(process.env.EMAIL_USER, process.env.EMAIL_PASS);
 // 📌 Simulated Database for OTPs
@@ -1055,12 +1063,8 @@ exports.sendOtp = async (req, res) => {
     console.log("Email:", email);
 
     try {
-      await transporter.sendMail({
-        from: `User Otp" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: "Your OTP for Login Into READGRO",
-        html: `<p>Your OTP for processing credentials: <strong>${otp}</strong></p>`,
-      });
+      const otpContent = `<p>Your OTP for processing credentials: <strong>${otp}</strong></p>`;
+      await sendEmail(email, "Your OTP for Login Into READGRO", otpContent);
 
       res.json({ success: true, message: "OTP sent to email" });
     } catch (error) {
