@@ -17,20 +17,20 @@ exports.authadmin = (req, res, next) => {
   }
 
   connection.query(
-    "SELECT * FROM admin_details WHERE email = ?",
+    "SELECT * FROM admin_details WHERE email = $1",
     [email],
-    async (err, results) => {
+    async (err, result) => {
       if (err) {
         console.error("Database error:", err);
         return res.status(500).json({ message: "Internal Server Error" });
       }
 
-      if (results.length === 0) {
+      if (result.rows.length === 0) {
         console.log("Admin not found");
         return res.status(401).json({ message: "Unknown admin" });
       }
 
-      const admin = results[0];
+      const admin = result.rows[0];
       const passwordMatch = await bcrypt.compare(password, admin.password);
 
       if (!passwordMatch) {
@@ -148,7 +148,7 @@ exports.createCourse = async (req, res) => {
 
   const query = `
     INSERT INTO course (course_name, created_time, course_description, instructor, course_image, course_price, discount_price, commission) 
-    VALUES (?, NOW(), ?, ?, ?, ?, ?, ?)
+    VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7) RETURNING course_id
   `;
 
   connection.query(
@@ -165,7 +165,7 @@ exports.createCourse = async (req, res) => {
 
       res.status(201).json({
         message: "Course created successfully",
-        course_id: result.insertId,
+        course_id: result.rows[0].course_id,
       });
     }
   );
@@ -182,7 +182,7 @@ exports.createTopic = (req, res, next) => {
 
   // Corrected query with quotes
   const query =
-    "INSERT INTO topics (topic_name, video_url, course_id) VALUES (?, ?, ?)";
+    "INSERT INTO topics (topic_name, video_url, course_id) VALUES ($1, $2, $3) RETURNING topic_id";
 
   connection.query(query, [topic_name, video_url, course_id], (err, result) => {
     if (err) {
@@ -195,7 +195,7 @@ exports.createTopic = (req, res, next) => {
 
     res.status(201).json({
       message: "Topic created successfully",
-      topic_id: result.insertId, // Returns the ID of the newly created topic
+      topic_id: result.rows[0].topic_id, // Returns the ID of the newly created topic
     });
   });
 };
@@ -213,7 +213,7 @@ exports.updateTopic = (req, res, next) => {
 
   // Update query
   const query =
-    "UPDATE topics SET topic_name = ?, video_url = ? WHERE topic_id = ?";
+    "UPDATE topics SET topic_name = $1, video_url = $2 WHERE topic_id = $3";
 
   connection.query(query, [topic_name, video_url, topic_id], (err, result) => {
     if (err) {
@@ -224,7 +224,7 @@ exports.updateTopic = (req, res, next) => {
       });
     }
 
-    if (result.affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ message: "Topic not found" });
     }
 
@@ -237,7 +237,7 @@ exports.updateTopic = (req, res, next) => {
 exports.getAllCourses = (req, res) => {
   const query = "SELECT * FROM course";
 
-  connection.query(query, (err, results) => {
+  connection.query(query, (err, result) => {
     if (err) {
       console.error("Error fetching courses:", err);
       return res
@@ -247,7 +247,7 @@ exports.getAllCourses = (req, res) => {
 
     res
       .status(200)
-      .json({ message: "Courses fetched successfully", courses: results });
+      .json({ message: "Courses fetched successfully", courses: result.rows });
   });
 };
 
@@ -259,9 +259,9 @@ exports.getTopicsByCourseId = (req, res) => {
     return res.status(400).json({ message: "Course ID is required" });
   }
 
-  const query = "SELECT * FROM topics WHERE course_id = ?";
+  const query = "SELECT * FROM topics WHERE course_id = $1";
   console.log("get topics");
-  connection.query(query, [course_id], (err, results) => {
+  connection.query(query, [course_id], (err, result) => {
     if (err) {
       console.error("Error fetching topics:", err);
       return res
@@ -271,7 +271,7 @@ exports.getTopicsByCourseId = (req, res) => {
 
     res
       .status(200)
-      .json({ message: "Topics fetched successfully", topics: results });
+      .json({ message: "Topics fetched successfully", topics: result.rows });
   });
 };
 exports.getPackagesByCourse = (req, res) => {
@@ -281,10 +281,10 @@ exports.getPackagesByCourse = (req, res) => {
     SELECT DISTINCT p.package_id, p.package_name
     FROM packages p
     INNER JOIN package_courses pc ON p.package_id = pc.package_id
-    WHERE pc.course_id = ?;
+    WHERE pc.course_id = $1;
   `;
 
-  connection.query(query, [course_id], (err, results) => {
+  connection.query(query, [course_id], (err, result) => {
     if (err) {
       console.error("Error fetching packages:", err);
       return res
@@ -294,7 +294,7 @@ exports.getPackagesByCourse = (req, res) => {
 
     res.status(200).json({
       message: "Packages fetched successfully",
-      packages: results,
+      packages: result.rows,
     });
   });
 };
@@ -309,9 +309,9 @@ exports.getCourseByCourseId = (req, res) => {
 
   console.log("Fetching course details");
 
-  const query = "SELECT * FROM course WHERE course_id = ?";
+  const query = "SELECT * FROM course WHERE course_id = $1";
 
-  connection.query(query, [course_id], (err, results) => {
+  connection.query(query, [course_id], (err, result) => {
     if (err) {
       console.error("Error fetching course:", err);
       return res
@@ -319,13 +319,13 @@ exports.getCourseByCourseId = (req, res) => {
         .json({ message: "Internal Server Error", error: err });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: "Course not found" });
     }
 
     // Extracting the course details
-    const courseDetails = results[0]; // Assuming `course_id` is unique
-    const { course_name, course_description, instructor, course_image,  course_price,
+    const courseDetails = result.rows[0]; // Assuming `course_id` is unique
+    const { course_name, course_description, instructor, course_image, course_price,
       discount_price,
       commission } =
       courseDetails;
@@ -338,9 +338,9 @@ exports.getCourseByCourseId = (req, res) => {
         description: course_description,
         instructor: instructor,
         image: course_image,
-        course_price:course_price,
-        discount_price:discount_price,
-        commission:commission,
+        course_price: course_price,
+        discount_price: discount_price,
+        commission: commission,
       },
     });
   });
@@ -356,9 +356,9 @@ exports.getCourseByCourseName = (req, res) => {
 
   console.log("Fetching course details by name:", course_name);
 
-  const query = "SELECT * FROM course WHERE course_name = ?";
+  const query = "SELECT * FROM course WHERE course_name = $1";
 
-  connection.query(query, [course_name], (err, results) => {
+  connection.query(query, [course_name], (err, result) => {
     if (err) {
       console.error("Error fetching course:", err);
       return res
@@ -366,12 +366,12 @@ exports.getCourseByCourseName = (req, res) => {
         .json({ message: "Internal Server Error", error: err });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: "Course not found" });
     }
 
     // Extracting the course details
-    const courseDetails = results[0];
+    const courseDetails = result.rows[0];
     const { course_id, course_description, instructor, course_image, course_price,
       discount_price,
       commission } = courseDetails;
@@ -405,7 +405,7 @@ exports.Getadmindashboard = (req, res) => {
   };
 
   // 📌 Fetch Total Users
-  connection.query("SELECT COUNT(*) AS totalUsers FROM user", (err, users) => {
+  connection.query("SELECT COUNT(*) AS totalusers FROM \"user\"", (err, users) => {
     if (err) {
       console.error("Error fetching users:", err);
       return res.status(500).json({
@@ -414,11 +414,11 @@ exports.Getadmindashboard = (req, res) => {
       });
     }
 
-    responseData.totalUsers = users[0].totalUsers;
+    responseData.totalUsers = users.rows[0].totalusers;
 
     // 📌 Fetch Total Packages
     connection.query(
-      "SELECT COUNT(*) AS totalPackages FROM packages",
+      "SELECT COUNT(*) AS totalpackages FROM packages",
       (err, packages) => {
         if (err) {
           console.error("Error fetching packages:", err);
@@ -428,11 +428,11 @@ exports.Getadmindashboard = (req, res) => {
           });
         }
 
-        responseData.totalPackages = packages[0].totalPackages;
+        responseData.totalPackages = packages.rows[0].totalpackages;
 
         // 📌 Fetch Total Courses
         connection.query(
-          "SELECT COUNT(*) AS totalCourses FROM course",
+          "SELECT COUNT(*) AS totalcourses FROM course",
           (err, courses) => {
             if (err) {
               console.error("Error fetching courses:", err);
@@ -442,7 +442,7 @@ exports.Getadmindashboard = (req, res) => {
               });
             }
 
-            responseData.totalCourses = courses[0].totalCourses;
+            responseData.totalCourses = courses.rows[0].totalcourses;
 
             // 📌 Fetch Razorpay Account Balance
             axios
@@ -487,11 +487,11 @@ exports.getAdminDetails = (req, res) => {
       return res.status(500).json({ message: "Database error", error: err });
     }
 
-    if (result.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: "Admin not found" });
     }
 
-    res.status(200).json(result[0]); // Send admin details
+    res.status(200).json(result.rows[0]); // Send admin details
   });
 };
 
@@ -555,7 +555,7 @@ exports.updateAdmin = async (req, res) => {
     // Update query
     const query = `
       UPDATE admin_details 
-      SET email = ?, name = ?, phone_number = ?, password = COALESCE(?, password) where id=1
+      SET email = $1, name = $2, phone_number = $3, password = COALESCE($4, password) where id=1
     `;
 
     connection.query(
@@ -582,15 +582,15 @@ exports.sendloginOtp = async (req, res) => {
   const { email } = req.body;
 
   // Check if the user exists in the database
-  const userQuery = "SELECT id FROM admin_details WHERE email = ?";
-  connection.query(userQuery, [email], async (err, results) => {
+  const userQuery = "SELECT id FROM admin_details WHERE email = $1";
+  connection.query(userQuery, [email], async (err, result) => {
     if (err) {
       return res
         .status(500)
         .json({ success: false, message: "Database error", error: err });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res
         .status(404)
         .json({ success: false, message: "Admin  not found." });
@@ -638,22 +638,22 @@ exports.VerifyOtp = (req, res) => {
   delete otpStore2[email];
 
   // Fetch admin details from the database
-  const adminQuery = `SELECT id, name, email FROM admin_details WHERE email = ?`;
+  const adminQuery = `SELECT id, name, email FROM admin_details WHERE email = $1`;
 
-  connection.query(adminQuery, [email], (err, results) => {
+  connection.query(adminQuery, [email], (err, result) => {
     if (err) {
       return res
         .status(500)
         .json({ success: false, message: "Database error", error: err });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res
         .status(404)
         .json({ success: false, message: "Admin not found" });
     }
 
-    const admin = results[0];
+    const admin = result.rows[0];
 
     // Generate JWT token for admin
     const token = jwt.sign(
@@ -738,19 +738,20 @@ exports.updateWebsiteHero = (req, res, next) => {
 
     let query = "UPDATE webheroimages SET ";
     const queryParams = [];
+    let paramIndex = 1;
 
     if (image1) {
-      query += "image1 = ?, ";
+      query += `image1 = $${paramIndex++}, `;
       queryParams.push(image1);
     }
 
     if (image2) {
-      query += "image2 = ?, ";
+      query += `image2 = $${paramIndex++}, `;
       queryParams.push(image2);
     }
 
     if (image3) {
-      query += "image3 = ?, ";
+      query += `image3 = $${paramIndex++}, `;
       queryParams.push(image3);
     }
 
@@ -761,7 +762,7 @@ exports.updateWebsiteHero = (req, res, next) => {
     }
 
     query = query.slice(0, -2); // Remove trailing comma
-    query += " WHERE id = ?;";
+    query += ` WHERE id = $${paramIndex}`;
     queryParams.push(id);
 
     connection.query(query, queryParams, (err, result) => {
@@ -773,7 +774,7 @@ exports.updateWebsiteHero = (req, res, next) => {
         });
       }
 
-      if (result.affectedRows === 0) {
+      if (result.rowCount === 0) {
         return res
           .status(404)
           .json({ message: "Website hero entry not found" });
@@ -790,7 +791,7 @@ exports.updateWebsiteHero = (req, res, next) => {
 exports.getWebsiteHeroImages = (req, res) => {
   const query = "SELECT image1, image2, image3 FROM webheroimages;"; // Or add a WHERE clause if you need specific records
 
-  connection.query(query, (err, results) => {
+  connection.query(query, (err, result) => {
     if (err) {
       console.error("Error retrieving website hero images:", err);
       return res.status(500).json({
@@ -799,12 +800,12 @@ exports.getWebsiteHeroImages = (req, res) => {
       });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: "No website hero images found" });
     }
 
     // Process the results
-    const imageNames = results.map((row) => ({
+    const imageNames = result.rows.map((row) => ({
       image1: row.image1,
       image2: row.image2,
       image3: row.image3,

@@ -1,27 +1,30 @@
-const mysql = require("mysql2");
+const { Pool } = require('pg');
+require("dotenv").config();
 
-const connection = mysql
-  .createPool({
-  // host: "database-1.c0jsqu0427x8.us-east-1.rds.amazonaws.com",
-  // user: "admin",
-  // password: "Readgro123",
-  // database: "admin",
-    // port: 3306, // Important if not default 3306
-    // host: "localhost",
-    // user: "root",
-    // password: "root",
-    // database: "admin",
-    host: "caboose.proxy.rlwy.net",
-     port: 39500,
-  user: "root",
-  password: "dPnxVDxihrLrofZDpFJJwDkKoQzctKGq",
-  database: "railway",
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-  })
-  .promise();
+// Create a new pool using the connection string
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+// Add an error listener to the pool to handle idle client errors
+pool.on("error", (err, client) => {
+  console.error("Unexpected error on idle client", err);
+  process.exit(-1);
+});
+// Helper function to get a client from the pool
+// This mimics the mysql2 promise wrapper's getConnection() behavior roughly
+pool.getConnection = async () => {
+  const client = await pool.connect();
+  // Add release method alias if needed, but client.release() is standard in pg
+  // We can just return the client.
+  // However, if the codebase expects `conn.release()`, pg client has `client.release()`.
 
-console.log("✅ Connected to AWS MySQL (Promise-based Connection)");
+  // If the codebase uses `conn.execute(sql, params)`, pg client has `client.query(sql, params)`.
+  // We might need to monkey-patch or wrap the client if the syntax differs significantly.
+  // For now, let's return the raw client and handle syntax changes in controllers.
+  return client;
+};
 
-module.exports = connection;
+module.exports = pool;

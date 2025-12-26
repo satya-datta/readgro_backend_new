@@ -13,21 +13,21 @@ exports.CreateWR = (req, res) => {
     return res.status(400).json({ message: "Invalid withdrawal amount" });
   }
 
-  const walletQuery = "SELECT balance FROM wallet WHERE user_id = ?";
+  const walletQuery = "SELECT balance FROM wallet WHERE user_id = $1";
 
-  connection.query(walletQuery, [user_id], (err, results) => {
+  connection.query(walletQuery, [user_id], (err, result) => {
     if (err) {
       console.error("Error fetching wallet balance:", err);
       return res.status(500).json({ message: "Internal server error" });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res
         .status(404)
         .json({ message: "Wallet not found for this user" });
     }
 
-    const walletBalance = parseFloat(results[0].balance);
+    const walletBalance = parseFloat(result.rows[0].balance);
     const amountToWithdraw = parseFloat(withdrawAmount);
 
     // Log actual values and types for safety
@@ -45,7 +45,7 @@ exports.CreateWR = (req, res) => {
     }
     // Step 3: Insert withdrawal request with status 'pending' and current timestamp
     const insertQuery =
-      "INSERT INTO withdrawal_requests (user_id, amount, status, created_at) VALUES (?, ?, 'pending', NOW())";
+      "INSERT INTO withdrawal_requests (user_id, amount, status, created_at) VALUES ($1, $2, 'pending', NOW())";
 
     connection.query(insertQuery, [user_id, withdrawAmount], (err, result) => {
       if (err) {
@@ -55,7 +55,7 @@ exports.CreateWR = (req, res) => {
 
       // Step 4: Deduct the withdrawal amount from wallet balance
       const updateWalletQuery =
-        "UPDATE wallet SET balance = balance - ? WHERE user_id = ?";
+        "UPDATE wallet SET balance = balance - $1 WHERE user_id = $2";
 
       connection.query(
         updateWalletQuery,
@@ -85,18 +85,14 @@ exports.getWithdrawalRequests = (req, res) => {
 
   // Fetch withdrawal requests for the given user_id
   const requestQuery =
-    "SELECT id, amount, status, created_at FROM withdrawal_requests WHERE user_id = ? ORDER BY created_at DESC";
-  connection.query(requestQuery, [user_id], (err, results) => {
+    "SELECT id, amount, status, created_at FROM withdrawal_requests WHERE user_id = $1 ORDER BY created_at DESC";
+  connection.query(requestQuery, [user_id], (err, result) => {
     if (err) {
       console.error("Error fetching withdrawal requests:", err);
       return res.status(500).json({ message: "Internal server error" });
     }
 
-    // if (results.length === 0) {
-    //     return res.json({ message: "No withdrawal requests found for this user" });
-    // }
-
-    return res.status(200).json({ withdrawalRequests: results });
+    return res.status(200).json({ withdrawalRequests: result.rows });
   });
 };
 
@@ -106,15 +102,15 @@ exports.getTransactionsByRefferId = (req, res) => {
 
   // Query to fetch transactions based on reffer_id
   const query = `
-        SELECT * FROM wallettransactions  WHERE reffer_id = ? ORDER BY created_at DESC`;
+        SELECT * FROM wallettransactions  WHERE reffer_id = $1 ORDER BY created_at DESC`;
 
-  connection.query(query, [reffer_id], (err, results) => {
+  connection.query(query, [reffer_id], (err, result) => {
     if (err) {
       console.error("Error fetching transactions:", err);
       return res.status(500).json({ message: "Internal server error" });
     }
 
-    return res.status(200).json({ transactions: results });
+    return res.status(200).json({ transactions: result.rows });
   });
 };
 
@@ -127,9 +123,9 @@ exports.getWalletDetails = (req, res) => {
       .json({ success: false, message: "User ID is required" });
   }
 
-  const walletQuery = "SELECT balance FROM wallet WHERE user_id = ?";
+  const walletQuery = "SELECT balance FROM wallet WHERE user_id = $1";
 
-  connection.query(walletQuery, [user_id], (err, results) => {
+  connection.query(walletQuery, [user_id], (err, result) => {
     if (err) {
       console.error("Error fetching wallet balance:", err);
       return res
@@ -137,13 +133,13 @@ exports.getWalletDetails = (req, res) => {
         .json({ success: false, message: "Internal server error" });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res
         .status(404)
         .json({ success: false, message: "Wallet not found for this user" });
     }
 
-    return res.status(200).json({ success: true, balance: results[0].balance });
+    return res.status(200).json({ success: true, balance: result.rows[0].balance });
   });
 };
 
@@ -158,9 +154,9 @@ exports.deductWallet = (req, res) => {
   }
 
   // Step 1: Fetch current wallet balance
-  const walletQuery = "SELECT balance FROM wallet WHERE user_id = ?";
+  const walletQuery = "SELECT balance FROM wallet WHERE user_id = $1";
 
-  connection.query(walletQuery, [user_id], (err, results) => {
+  connection.query(walletQuery, [user_id], (err, result) => {
     if (err) {
       console.error("Error fetching wallet balance:", err);
       return res
@@ -168,13 +164,13 @@ exports.deductWallet = (req, res) => {
         .json({ success: false, message: "Internal server error" });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res
         .status(404)
         .json({ success: false, message: "Wallet not found for this user" });
     }
 
-    const currentBalance = results[0].balance;
+    const currentBalance = result.rows[0].balance;
 
     // Step 2: Check if balance is sufficient
     if (currentBalance < amount) {
@@ -185,12 +181,12 @@ exports.deductWallet = (req, res) => {
 
     // Step 3: Deduct the amount
     const updateQuery =
-      "UPDATE wallet SET balance = balance - ? WHERE user_id = ?";
+      "UPDATE wallet SET balance = balance - $1 WHERE user_id = $2";
 
     connection.query(
       updateQuery,
       [amount, user_id],
-      (updateErr, updateResults) => {
+      (updateErr, updateResult) => {
         if (updateErr) {
           console.error("Error updating wallet balance:", updateErr);
           return res
@@ -217,22 +213,22 @@ exports.getEarnings = (req, res) => {
 
   const earningsQuery = `
     SELECT 
-      SUM(CASE WHEN DATE(created_at) = CURDATE() THEN amount ELSE 0 END) AS todayEarnings,
-      SUM(CASE WHEN created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN amount ELSE 0 END) AS last7DaysEarnings,
-      SUM(CASE WHEN created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN amount ELSE 0 END) AS last30DaysEarnings,
+      SUM(CASE WHEN DATE(created_at) = CURRENT_DATE THEN amount ELSE 0 END) AS todayEarnings,
+      SUM(CASE WHEN created_at >= CURRENT_DATE - INTERVAL '7 days' THEN amount ELSE 0 END) AS last7DaysEarnings,
+      SUM(CASE WHEN created_at >= CURRENT_DATE - INTERVAL '30 days' THEN amount ELSE 0 END) AS last30DaysEarnings,
       SUM(amount) AS overallEarnings
     FROM wallettransactions 
-    WHERE reffer_id = ? and transaction_type = "credit"
+    WHERE reffer_id = $1 and transaction_type = 'credit'
   `;
 
-  connection.query(earningsQuery, [reffer_id], (err, results) => {
+  connection.query(earningsQuery, [reffer_id], (err, result) => {
     if (err) {
       return res
         .status(500)
         .json({ message: "Error fetching earnings", error: err });
     }
 
-    const earnings = results[0];
+    const earnings = result.rows[0];
 
     res.status(200).json({
       success: true,
@@ -304,39 +300,39 @@ exports.ProcessPayout = async (req, res) => {
   }
   const conn = await connection2.getConnection();
   try {
-    // 📌 Start MySQL Transaction
-    await conn.beginTransaction();
+    // 📌 Start Transaction
+    await conn.query("BEGIN"); // pg transaction start
 
     // 📌 Fetch User's Email
-    const [user] = await conn.execute(
-      "SELECT email FROM user WHERE userId = ?",
+    const user = await conn.query(
+      "SELECT email FROM \"user\" WHERE \"userid\" = $1",
       [userId]
     );
 
-    if (!user.length) {
+    if (user.rows.length === 0) {
       return res
         .status(400)
         .json({ success: false, message: "User not found" });
     }
-    userEmail = user[0].email;
+    userEmail = user.rows[0].email;
 
     // 📌 Fetch Fund Account ID from `user_bank_details`
-    const [bankDetails] = await conn.execute(
-      "SELECT fund_account_id FROM user_bank_details WHERE user_id = ?",
+    const bankDetails = await conn.query(
+      "SELECT fund_account_id FROM user_bank_details WHERE user_id = $1",
       [userId]
     );
 
-    if (!bankDetails.length || !bankDetails[0].fund_account_id) {
+    if (bankDetails.rows.length === 0 || !bankDetails.rows[0].fund_account_id) {
       return res.status(400).json({
         success: false,
         message: "Invalid Fund Account or User Not Found",
       });
     }
-    const fund_account_id = bankDetails[0].fund_account_id;
+    const fund_account_id = bankDetails.rows[0].fund_account_id;
 
     // 📌 Create RazorpayX Payout
     const payoutData = {
-      account_number: "2323230022317499", // RazorpayX Test Account
+      account_number: process.env.RAZORPAYX_ACCOUNT_NUMBER || "2323230022317499", // Ensure env var or fallback
       fund_account_id: fund_account_id,
       amount: amount * 100, // Convert to paisa
       currency: "INR",
@@ -359,36 +355,36 @@ exports.ProcessPayout = async (req, res) => {
     console.log(requestId, "request Id ");
     // 📌 Update Withdrawal Status to Approved (Using `connection`)
     const updateQuery =
-      "UPDATE withdrawal_requests SET status = 'Approved' WHERE id = ?";
+      "UPDATE withdrawal_requests SET status = 'Approved' WHERE id = $1";
     connection.query(updateQuery, [requestId], (err) => {
       if (err) {
         console.error("Error updating withdrawal status:", err);
       }
     });
-    console.log(requestId, "request Id ");
+
     // 📌 Get Wallet ID using user_id
-    const [walletRows] = await conn.execute(
-      "SELECT wallet_id FROM wallet WHERE user_id = ?",
+    const walletRows = await conn.query(
+      "SELECT wallet_id FROM wallet WHERE user_id = $1",
       [userId]
     );
 
-    if (!walletRows.length) {
+    if (walletRows.rows.length === 0) {
       throw new Error("Wallet not found for the user");
     }
 
-    const walletId = walletRows[0].wallet_id;
+    const walletId = walletRows.rows[0].wallet_id;
 
     // 📌 Insert transaction into wallettransactions table
-    await conn.execute(
+    await conn.query(
       `INSERT INTO wallettransactions 
-    (wallet_id, amount, transaction_type, description, created_at, reffer_id) 
-   VALUES (?, ?, 'debit', ?, NOW(), ?)`,
+     (wallet_id, amount, transaction_type, description, created_at, reffer_id, user_id) 
+     VALUES ($1, $2, 'debit', $3, NOW(), $4, $5)`,
       [
         walletId,
         amount,
         `Debited to user ${userId}`,
-
-        userId, // You said `reffer_id = user_id` in this case
+        userId, // reffer_id
+        userId  // user_id
       ]
     );
 
@@ -408,7 +404,7 @@ exports.ProcessPayout = async (req, res) => {
 
     sendEmail(userEmail, "Withdrawal Approved", withdrawalEmailContent);
 
-    await conn.commit();
+    await conn.query("COMMIT"); // pg commit
     res.json({
       success: true,
       message: "Payout processed successfully",
@@ -417,11 +413,11 @@ exports.ProcessPayout = async (req, res) => {
   } catch (error) {
     console.error("Payout Processing Error:", error);
 
-    await conn.rollback(); // Rollback transaction
+    await conn.query("ROLLBACK"); // pg rollback
 
     // 📌 Refund money back to user's wallet (Using `connection`, not `conn`)
     const refundQuery =
-      "UPDATE wallet SET balance = balance + ?, last_updated = NOW() WHERE user_id = ?";
+      "UPDATE wallet SET balance = balance + $1, last_updated = NOW() WHERE user_id = $2";
     connection.query(refundQuery, [amount, userId], (err) => {
       if (err) {
         console.error("Error refunding money to wallet:", err);
@@ -430,7 +426,7 @@ exports.ProcessPayout = async (req, res) => {
 
     // 📌 Update Withdrawal Request Status to Rejected (Using `connection`)
     const rejectQuery =
-      "UPDATE withdrawal_requests SET status = 'Rejected' WHERE id = ?";
+      "UPDATE withdrawal_requests SET status = 'Rejected' WHERE id = $1";
     connection.query(rejectQuery, [requestId], (err) => {
       if (err) {
         console.error("Error updating withdrawal status to Rejected:", err);

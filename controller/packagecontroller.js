@@ -69,7 +69,7 @@ exports.createPackage = (req, res, next) => {
   // Save data in your database with imageUrl
   const query = `
     INSERT INTO packages (package_name, package_price, description, package_image, created_time, commission, discount_price)
-    VALUES (?, ?, ?, ?, NOW(), ?, ?)
+    VALUES ($1, $2, $3, $4, NOW(), $5, $6) RETURNING package_id
   `;
 
   connection.query(
@@ -83,7 +83,7 @@ exports.createPackage = (req, res, next) => {
 
       res.status(201).json({
         message: "Package created successfully.",
-        package_id: result.insertId,
+        package_id: result.rows[0].package_id,
         imageUrl,
       });
     }
@@ -131,25 +131,25 @@ exports.updatePackageById = async (req, res) => {
   const query = packageImage
     ? `
       UPDATE packages 
-      SET package_name = ?, package_price = ?, description = ?, commission = ?, discount_price = ?, package_image = ?
-      WHERE package_id = ?
+      SET package_name = $1, package_price = $2, description = $3, commission = $4, discount_price = $5, package_image = $6
+      WHERE package_id = $7
     `
     : `
       UPDATE packages 
-      SET package_name = ?, package_price = ?, description = ?, commission = ?, discount_price = ?
-      WHERE package_id = ?
+      SET package_name = $1, package_price = $2, description = $3, commission = $4, discount_price = $5
+      WHERE package_id = $6
     `;
 
   const values = packageImage
     ? [
-        packageName,
-        price,
-        description,
-        commission,
-        discountPrice,
-        packageImage,
-        package_id,
-      ]
+      packageName,
+      price,
+      description,
+      commission,
+      discountPrice,
+      packageImage,
+      package_id,
+    ]
     : [packageName, price, description, commission, discountPrice, package_id];
 
   connection.query(query, values, (err, result) => {
@@ -160,7 +160,7 @@ exports.updatePackageById = async (req, res) => {
         .json({ message: "Internal Server Error", error: err });
     }
 
-    if (result.affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ message: "Package not found" });
     }
 
@@ -191,10 +191,10 @@ exports.getCoursesByCourseIds = (req, res) => {
   console.log("Fetching course details for multiple course_ids:", course_ids);
 
   // Create placeholders for SQL query based on the number of course_ids
-  const placeholders = course_ids.map(() => "?").join(",");
+  const placeholders = course_ids.map((_, i) => `$${i + 1}`).join(",");
   const query = `SELECT * FROM course WHERE course_id IN (${placeholders})`;
 
-  connection.query(query, course_ids, (err, results) => {
+  connection.query(query, course_ids, (err, result) => {
     if (err) {
       console.error("Error fetching courses:", err);
       return res
@@ -202,14 +202,14 @@ exports.getCoursesByCourseIds = (req, res) => {
         .json({ message: "Internal Server Error", error: err });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res
         .status(404)
         .json({ message: "No courses found for the provided IDs" });
     }
 
     // Map through the results and format the response
-    const courses = results.map((course) => {
+    const courses = result.rows.map((course) => {
       const {
         course_id,
         course_name,
@@ -239,15 +239,15 @@ exports.deletePackageAndCourses = async (req, res) => {
 
   try {
     // Begin a transaction
-    await connection.query("START TRANSACTION");
+    await connection.query("BEGIN");
 
     // Delete related entries from package_courses table
-    await connection.query("DELETE FROM package_courses WHERE package_id = ?", [
+    await connection.query("DELETE FROM package_courses WHERE package_id = $1", [
       package_id,
     ]);
 
     // Delete the package itself from the packages table
-    await connection.query("DELETE FROM packages WHERE package_id = ?", [
+    await connection.query("DELETE FROM packages WHERE package_id = $1", [
       package_id,
     ]);
 
@@ -276,22 +276,22 @@ exports.getPackagesWithCourses = (req, res, next) => {
 
   // SQL query to get the total number of packages that match the search term (for pagination)
   const countQuery = `
-    SELECT COUNT(DISTINCT p.package_id) AS totalPackages
+    SELECT COUNT(DISTINCT p.package_id) AS totalpackages
     FROM packages p
     LEFT JOIN package_courses pc ON p.package_id = pc.package_id
     LEFT JOIN course c ON pc.course_id = c.course_id
-    WHERE p.package_name LIKE ?;
+    WHERE p.package_name LIKE $1;
   `;
 
   // SQL query to get the packages with courses, applying pagination
   const query = `
-    SELECT p.package_id, p.package_name, p.created_time, p.image_path, p.commission, c.course_name
+    SELECT p.package_id, p.package_name, p.created_time, p.package_image AS image_path, p.commission, c.course_name
     FROM packages p
     LEFT JOIN package_courses pc ON p.package_id = pc.package_id
     LEFT JOIN course c ON pc.course_id = c.course_id
-    WHERE p.package_name LIKE ? 
+    WHERE p.package_name LIKE $1
     ORDER BY p.created_time DESC 
-    LIMIT ? OFFSET ?;
+    LIMIT $2 OFFSET $3;
   `;
 
   // Execute the query to get the total number of matching packages
@@ -306,7 +306,7 @@ exports.getPackagesWithCourses = (req, res, next) => {
     }
 
     // Calculate the total number of pages
-    const totalPackages = countResult[0].totalPackages;
+    const totalPackages = countResult.rows[0].totalpackages;
     const totalPages = Math.ceil(totalPackages / limit); // Round up the division result
 
     // Now, execute the query to fetch the paginated packages and their courses
@@ -323,7 +323,7 @@ exports.getPackagesWithCourses = (req, res, next) => {
         }
 
         // Combine the rows into the appropriate structure
-        const packagesWithCourses = result.reduce((acc, row) => {
+        const packagesWithCourses = result.rows.reduce((acc, row) => {
           const existingPackage = acc.find(
             (pkg) => pkg.package_id === row.package_id
           );
@@ -371,7 +371,7 @@ exports.deleteCoursesFromPackage = (req, res, next) => {
   }
 
   // Validate the existence of the package
-  const checkPackageQuery = `SELECT * FROM packages WHERE package_id = ?`;
+  const checkPackageQuery = `SELECT * FROM packages WHERE package_id = $1`;
   connection.query(checkPackageQuery, [package_id], (err, result) => {
     if (err) {
       console.error("Error checking package:", err);
@@ -381,15 +381,18 @@ exports.deleteCoursesFromPackage = (req, res, next) => {
       });
     }
 
-    if (result.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: "Package not found." });
     }
 
     // Validate that the courses exist in the package_courses table
-    const checkCoursesQuery = `SELECT * FROM package_courses WHERE package_id = ? AND course_id IN (?)`;
+    // Need dynamic IN placeholders
+    const placeholders = courses.map((_, i) => `$${i + 2}`).join(","); // Start from $2 because package_id is $1
+    const checkCoursesQuery = `SELECT * FROM package_courses WHERE package_id = $1 AND course_id IN (${placeholders})`;
+
     connection.query(
       checkCoursesQuery,
-      [package_id, courses],
+      [package_id, ...courses],
       (err, result) => {
         if (err) {
           console.error("Error checking courses:", err);
@@ -399,33 +402,29 @@ exports.deleteCoursesFromPackage = (req, res, next) => {
           });
         }
 
-        // If no matching course entries are found in the package_courses table, return an error
-        if (result.length === 0) {
-          return res
-            .status(404)
-            .json({ message: "No matching courses found in the package." });
+        if (result.rows.length !== courses.length) {
+          return res.status(400).json({
+            message: "Some selected courses are not part of this package.",
+          });
         }
 
-        // Proceed to remove the selected courses from the package_courses table
-        const deleteCoursesQuery = `DELETE FROM package_courses WHERE package_id = ? AND course_id IN (?)`;
-        connection.query(
-          deleteCoursesQuery,
-          [package_id, courses],
-          (err, result) => {
-            if (err) {
-              console.error("Error deleting courses:", err);
-              return res.status(500).json({
-                message: "An error occurred while deleting the courses.",
-                error: err,
-              });
-            }
+        // Delete the courses from the package_courses table
+        const deletePlaceholders = courses.map((_, i) => `$${i + 2}`).join(",");
+        const deleteQuery = `DELETE FROM package_courses WHERE package_id = $1 AND course_id IN (${deletePlaceholders})`;
 
-            res.status(200).json({
-              message:
-                "Selected courses removed from the package successfully.",
+        connection.query(deleteQuery, [package_id, ...courses], (err, result) => {
+          if (err) {
+            console.error("Error deleting courses:", err);
+            return res.status(500).json({
+              message: "An error occurred while deleting the courses.",
+              error: err,
             });
           }
-        );
+
+          res.status(200).json({
+            message: "selected courses successfully removed from the package.",
+          });
+        });
       }
     );
   });
@@ -458,8 +457,9 @@ exports.mapCoursesToPackage = (req, res, next) => {
     }
 
     // Now check if all courses exist in the courses table
-    const checkCoursesQuery = `SELECT * FROM course WHERE course_id IN (?)`;
-    connection.query(checkCoursesQuery, [courses], (err, result) => {
+    const placeholders = courses.map((_, i) => `$${i + 1}`).join(",");
+    const checkCoursesQuery = `SELECT * FROM course WHERE course_id IN (${placeholders})`;
+    connection.query(checkCoursesQuery, courses, (err, result) => {
       if (err) {
         console.error("Error checking courses:", err);
         return res.status(500).json({
@@ -468,22 +468,23 @@ exports.mapCoursesToPackage = (req, res, next) => {
         });
       }
 
-      if (result.length !== courses.length) {
+      if (result.rows.length !== courses.length) {
         return res
           .status(404)
           .json({ message: "One or more courses not found." });
       }
 
       // Now insert the courses into the package_courses table
+      const courseValues = courses.map((courseId) => [packageId, courseId]);
+      const flatValues = courseValues.flat();
+      const insertPlaceholders = courses.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(",");
+
       const mapCoursesQuery = `
         INSERT INTO package_courses (package_id, course_id)
-        VALUES ?
+        VALUES ${insertPlaceholders}
       `;
 
-      // Prepare the course values to be inserted
-      const courseValues = courses.map((courseId) => [packageId, courseId]);
-
-      connection.query(mapCoursesQuery, [courseValues], (err, result) => {
+      connection.query(mapCoursesQuery, flatValues, (err, result) => {
         if (err) {
           console.error("Error mapping courses:", err);
           return res.status(500).json({
@@ -503,7 +504,7 @@ exports.mapCoursesToPackage = (req, res, next) => {
 exports.getAllPackages = (req, res) => {
   const getPackagesQuery = `SELECT * FROM packages`;
 
-  connection.query(getPackagesQuery, (err, results) => {
+  connection.query(getPackagesQuery, (err, result) => {
     if (err) {
       console.error("Error fetching packages:", err);
       return res.status(500).json({
@@ -512,7 +513,7 @@ exports.getAllPackages = (req, res) => {
       });
     }
 
-    res.status(200).json(results);
+    res.status(200).json(result.rows);
   });
 };
 
@@ -523,9 +524,9 @@ exports.getPackageDetailsById = (req, res) => {
     return res.status(400).json({ message: "Package ID is required" });
   }
 
-  const getPackageQuery = `SELECT * FROM packages WHERE package_id = ?`;
+  const getPackageQuery = `SELECT * FROM packages WHERE package_id = $1`;
 
-  connection.query(getPackageQuery, [package_id], (err, results) => {
+  connection.query(getPackageQuery, [package_id], (err, result) => {
     if (err) {
       console.error("Error fetching package details:", err);
       return res.status(500).json({
@@ -534,11 +535,11 @@ exports.getPackageDetailsById = (req, res) => {
       });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: "Package not found" });
     }
 
-    res.status(200).json(results[0]); // Return the first (and only) package
+    res.status(200).json(result.rows[0]); // Return the first (and only) package
   });
 };
 
@@ -549,9 +550,9 @@ exports.getPackageDetailsByName = (req, res) => {
     return res.status(400).json({ message: "Package Name is required" });
   }
 
-  const getPackageQuery = `SELECT * FROM packages WHERE package_name = ?`;
+  const getPackageQuery = `SELECT * FROM packages WHERE package_name = $1`;
 
-  connection.query(getPackageQuery, [package_name], (err, results) => {
+  connection.query(getPackageQuery, [package_name], (err, result) => {
     if (err) {
       console.error("Error fetching package details:", err);
       return res.status(500).json({
@@ -560,11 +561,11 @@ exports.getPackageDetailsByName = (req, res) => {
       });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: "Package not found" });
     }
 
-    res.status(200).json(results[0]); // Return the first (and only) package
+    res.status(200).json(result.rows[0]); // Return the first (and only) package
   });
 };
 
@@ -580,7 +581,7 @@ exports.addCoursesToPackage = (req, res, next) => {
   }
 
   // Check if the package exists
-  const checkPackageQuery = `SELECT * FROM packages WHERE package_id = ?`;
+  const checkPackageQuery = `SELECT * FROM packages WHERE package_id = $1`;
   connection.query(checkPackageQuery, [packageId], (err, result) => {
     if (err) {
       console.error("Error checking package:", err);
@@ -590,13 +591,14 @@ exports.addCoursesToPackage = (req, res, next) => {
       });
     }
 
-    if (result.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: "Package not found." });
     }
 
     // Now check if all courses exist in the courses table
-    const checkCoursesQuery = `SELECT * FROM course WHERE course_id IN (?)`;
-    connection.query(checkCoursesQuery, [courses], (err, result) => {
+    const placeholders = courses.map((_, i) => `$${i + 1}`).join(",");
+    const checkCoursesQuery = `SELECT * FROM course WHERE course_id IN (${placeholders})`;
+    connection.query(checkCoursesQuery, courses, (err, result) => {
       if (err) {
         console.error("Error checking courses:", err);
         return res.status(500).json({
@@ -605,22 +607,23 @@ exports.addCoursesToPackage = (req, res, next) => {
         });
       }
 
-      if (result.length !== courses.length) {
+      if (result.rows.length !== courses.length) {
         return res
           .status(404)
           .json({ message: "One or more courses not found." });
       }
 
       // Now insert the courses into the package_courses table
+      const courseValues = courses.map((courseId) => [packageId, courseId]);
+      const flatValues = courseValues.flat();
+      const insertPlaceholders = courses.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(",");
+
       const mapCoursesQuery = `
         INSERT INTO package_courses (package_id, course_id)
-        VALUES ?
+        VALUES ${insertPlaceholders}
       `;
 
-      // Prepare the course values to be inserted
-      const courseValues = courses.map((courseId) => [packageId, courseId]);
-
-      connection.query(mapCoursesQuery, [courseValues], (err, result) => {
+      connection.query(mapCoursesQuery, flatValues, (err, result) => {
         if (err) {
           console.error("Error adding courses:", err);
           return res.status(500).json({
@@ -644,22 +647,22 @@ exports.getPackageByUserId = (req, res, next) => {
     SELECT 
         p.package_id, p.package_name, p.description, p.package_price, 
         p.created_time, p.package_image, p.commission 
-    FROM user u
-    INNER JOIN packages p ON u.PackageId = p.package_id
-    WHERE u.UserId = ?;
+    FROM "user" u
+    INNER JOIN packages p ON u.courseid = p.package_id -- Assuming u.courseid is actually package_id as per previous logic?
+    WHERE u.UserId = $1;
 `;
 
-  connection.query(query, [userId], (err, results) => {
+  connection.query(query, [userId], (err, result) => {
     if (err) {
       console.error("Error retrieving user package details:", err);
       return res.status(500).json({ error: "Internal Server Error" });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "No package found for this user" });
     }
 
-    res.json(results[0]); // Sending first package as response
+    res.json(result.rows[0]); // Sending first package as response
   });
 };
 
@@ -673,15 +676,15 @@ exports.getPackageById = (req, res, next) => {
   }
 
   const packageQuery = `
-    SELECT p.package_id, p.package_name, p.package_price, p.description, p.created_time, p.commission, p.image_path,
+    SELECT p.package_id, p.package_name, p.package_price, p.description, p.created_time, p.commission, p.package_image AS image_path,
            c.course_id, c.course_name
     FROM packages p
     LEFT JOIN package_courses pc ON p.package_id = pc.package_id
     LEFT JOIN course c ON pc.course_id = c.course_id
-    WHERE p.package_id = ?;
+    WHERE p.package_id = $1;
   `;
 
-  connection.query(packageQuery, [package_id], (err, results) => {
+  connection.query(packageQuery, [package_id], (err, result) => {
     if (err) {
       return res.status(500).json({
         message: "An error occurred while fetching the package details.",
@@ -689,7 +692,7 @@ exports.getPackageById = (req, res, next) => {
       });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: "Package not found." });
     }
 
@@ -697,7 +700,7 @@ exports.getPackageById = (req, res, next) => {
     const baseImageUrl = "http://localhost:5000/uploads"; // Example: Replace with your actual URL
 
     // Organize package details and associated courses
-    const packageDetails = results.reduce((acc, row) => {
+    const packageDetails = result.rows.reduce((acc, row) => {
       if (!acc) {
         acc = {
           package_id: row.package_id,
@@ -734,11 +737,11 @@ exports.getCourseMapping = (req, res, next) => {
   const query = `
     SELECT course_id 
     FROM package_courses 
-    WHERE package_id = ? 
+    WHERE package_id = $1 
     ORDER BY map_id ASC
   `;
 
-  connection.query(query, [packageId], (err, results) => {
+  connection.query(query, [packageId], (err, result) => {
     if (err) {
       console.error("Error fetching course mapping:", err);
       return res.status(500).json({
@@ -747,14 +750,14 @@ exports.getCourseMapping = (req, res, next) => {
       });
     }
 
-    res.status(200).json(results); // Send back course_id values ordered by map_id
+    res.status(200).json(result.rows); // Send back course_id values ordered by map_id
   });
 };
 
 exports.getAllCourses = (req, res, next) => {
   const query = "SELECT course_id, course_name FROM course";
 
-  connection.query(query, (err, results) => {
+  connection.query(query, (err, result) => {
     if (err) {
       console.error("Error fetching courses:", err);
       return res.status(500).json({
@@ -763,7 +766,7 @@ exports.getAllCourses = (req, res, next) => {
       });
     }
 
-    res.status(200).json(results); // Send back the list of courses
+    res.status(200).json(result.rows); // Send back the list of courses
   });
 };
 
@@ -815,9 +818,10 @@ exports.createPackageWithCourses = async (req, res, next) => {
   }
 
   // Insert package details into the database
+  // Insert package details into the database
   const packageQuery = `
     INSERT INTO packages (package_name, package_price, description, package_image, created_time, commission, discount_price)
-    VALUES (?, ?, ?, ?, NOW(), ?, ?)
+    VALUES ($1, $2, $3, $4, NOW(), $5, $6) RETURNING package_id
   `;
 
   connection.query(
@@ -832,10 +836,11 @@ exports.createPackageWithCourses = async (req, res, next) => {
         });
       }
 
-      const packageId = result.insertId;
+      const packageId = result.rows[0].package_id;
 
-      const checkCoursesQuery = `SELECT course_id FROM course WHERE course_id IN (?)`;
-      connection.query(checkCoursesQuery, [courses], (err, result) => {
+      const placeholders = courses.map((_, i) => `$${i + 1}`).join(",");
+      const checkCoursesQuery = `SELECT course_id FROM course WHERE course_id IN (${placeholders})`;
+      connection.query(checkCoursesQuery, courses, (err, result) => {
         if (err) {
           console.error("Error checking courses:", err);
           return res.status(500).json({
@@ -844,16 +849,19 @@ exports.createPackageWithCourses = async (req, res, next) => {
           });
         }
 
-        if (result.length !== courses.length) {
+        if (result.rows.length !== courses.length) {
           return res
             .status(404)
             .json({ message: "One or more courses not found." });
         }
 
-        const mapCoursesQuery = `INSERT INTO package_courses (package_id, course_id) VALUES ?`;
         const courseValues = courses.map((courseId) => [packageId, courseId]);
+        const flatValues = courseValues.flat();
+        const insertPlaceholders = courses.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(",");
 
-        connection.query(mapCoursesQuery, [courseValues], (err) => {
+        const mapCoursesQuery = `INSERT INTO package_courses (package_id, course_id) VALUES ${insertPlaceholders}`;
+
+        connection.query(mapCoursesQuery, flatValues, (err) => {
           if (err) {
             console.error("Error mapping courses:", err);
             return res.status(500).json({

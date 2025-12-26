@@ -167,7 +167,7 @@ exports.insertUserBankDetails = (req, res, next) => {
           const insertQuery = `
         INSERT INTO user_bank_details 
         (user_id, account_holder_name, ifsc_code, account_number, bank_name, upi_id, contact_id, fund_account_id) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ubdid
       `;
 
           return new Promise((resolve, reject) => {
@@ -187,7 +187,7 @@ exports.insertUserBankDetails = (req, res, next) => {
                 if (err) {
                   reject({ type: "DATABASE_ERROR", error: err });
                 } else {
-                  resolve(result.insertId);
+                  resolve(result.rows[0].ubdid);
                 }
               }
             );
@@ -235,9 +235,9 @@ exports.getUserBankDetails = (req, res, next) => {
     return res.status(400).json({ message: "User ID is required" });
   }
 
-  const query = "SELECT * FROM user_bank_details WHERE user_id = ?";
+  const query = "SELECT * FROM user_bank_details WHERE user_id = $1";
 
-  connection.query(query, [user_id], (err, results) => {
+  connection.query(query, [user_id], (err, result) => {
     if (err) {
       console.error("Error retrieving user bank details:", err);
       return res.status(500).json({
@@ -246,14 +246,14 @@ exports.getUserBankDetails = (req, res, next) => {
       });
     }
 
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res
         .status(404)
         .json({ message: "No bank details found for this user" });
     }
 
     // Decrypt each bank detail safely
-    results.forEach((row) => {
+    result.rows.forEach((row) => {
       try {
         row.account_number = decrypt(row.account_number) || "Decryption Error";
       } catch (error) {
@@ -271,7 +271,7 @@ exports.getUserBankDetails = (req, res, next) => {
 
     res.status(200).json({
       message: "User bank details retrieved successfully",
-      bank_details: results,
+      bank_details: result.rows,
     });
   });
 };
@@ -297,13 +297,13 @@ exports.updateUserBankDetails = async (req, res, next) => {
     // Step 1: Fetch existing contact_id from DB
     const [existingData] = await new Promise((resolve, reject) => {
       connection.query(
-        `SELECT contact_id FROM user_bank_details WHERE user_id = ?`,
+        `SELECT contact_id FROM user_bank_details WHERE user_id = $1`,
         [user_id],
-        (err, results) => {
+        (err, result) => {
           if (err) return reject(err);
-          if (results.length === 0)
+          if (result.rows.length === 0)
             return reject({ code: 404, message: "User not found" });
-          resolve(results);
+          resolve(result.rows);
         }
       );
     });
@@ -340,13 +340,13 @@ exports.updateUserBankDetails = async (req, res, next) => {
     const updateQuery = `
       UPDATE user_bank_details 
       SET 
-        account_holder_name = ?, 
-        ifsc_code = ?, 
-        account_number = ?, 
-        bank_name = ?, 
-        upi_id = ?, 
-        fund_account_id = ?
-      WHERE user_id = ?
+        account_holder_name = $1, 
+        ifsc_code = $2, 
+        account_number = $3, 
+        bank_name = $4, 
+        upi_id = $5, 
+        fund_account_id = $6
+      WHERE user_id = $7
     `;
 
     connection.query(
@@ -369,7 +369,7 @@ exports.updateUserBankDetails = async (req, res, next) => {
           });
         }
 
-        if (result.affectedRows === 0) {
+        if (result.rowCount === 0) {
           return res
             .status(404)
             .json({ message: "No record found for given User ID" });
@@ -377,7 +377,7 @@ exports.updateUserBankDetails = async (req, res, next) => {
 
         res.status(200).json({
           message: "User bank details updated successfully with RazorpayX",
-          affectedRows: result.affectedRows,
+          affectedRows: result.rowCount,
           fund_account_id: new_fund_account_id,
         });
       }

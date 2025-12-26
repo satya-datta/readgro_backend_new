@@ -56,63 +56,7 @@ Packagerouter.get(
 //   "/edit_package/:package_id",
 //   packageController.getPackageById
 // );
-Packagerouter.post("/getcoursedetails", (req, res) => {
-  const { course_ids } = req.body;
-
-  if (!Array.isArray(course_ids) || course_ids.length === 0) {
-    return res
-      .status(400)
-      .json({ message: "Valid array of course IDs is required" });
-  }
-
-  console.log("Fetching course details for multiple course_ids:", course_ids);
-
-  const placeholders = course_ids.map(() => "?").join(",");
-  const query = `
-    SELECT * FROM course 
-    WHERE course_id IN (${placeholders}) 
-    ORDER BY FIELD(course_id, ${placeholders})
-  `;
-
-  const values = [...course_ids, ...course_ids]; // For IN and FIELD()
-
-  connection.query(query, values, (err, results) => {
-    if (err) {
-      console.error("Error fetching courses:", err);
-      return res
-        .status(500)
-        .json({ message: "Internal Server Error", error: err });
-    }
-
-    if (results.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No courses found for the provided IDs" });
-    }
-
-    const courses = results.map((course) => {
-      const {
-        course_id,
-        course_name,
-        course_description,
-        instructor,
-        course_image,
-      } = course;
-      return {
-        id: course_id,
-        name: course_name,
-        description: course_description,
-        instructor: instructor,
-        image: course_image,
-      };
-    });
-
-    res.status(200).json({
-      message: "Courses fetched successfully",
-      courses: courses,
-    });
-  });
-});
+Packagerouter.post("/getcoursedetails", packageController.getCoursesByCourseIds);
 
 // Route to update a package by ID
 //Packagerouter.put("/edit_package/:package_id", packageController.updatePackageById);

@@ -1,3 +1,4 @@
+const connection = require("../backend");
 const express = require("express");
 
 const paymentcontroller = require("../controller/paymentcontroller");
@@ -8,7 +9,7 @@ PaymentRouter.post("/order/validate", paymentcontroller.ValidateSignature);
 PaymentRouter.get("/getpayment", (req, res) => {
   const query = "SELECT * FROM payments ORDER BY payment_time DESC";
 
-  connection.query(query, (err, results) => {
+  connection.query(query, (err, result) => {
     if (err) {
       console.error("Error fetching payment records:", err);
       return res.status(500).json({ message: "Internal server error" });
@@ -16,7 +17,7 @@ PaymentRouter.get("/getpayment", (req, res) => {
 
     res.status(200).json({
       message: "Payments fetched successfully",
-      data: results,
+      data: result.rows,
     });
   });
 });
